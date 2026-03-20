@@ -87,6 +87,25 @@ def log_error_ratelimited(key: str, msg: str, exc: bool = True):
     else:
         _error_log_suppressed[key] = _error_log_suppressed.get(key, 0) + 1
 
+# --- Load .env file (no extra dependency) ---
+
+def _load_dotenv(path: str = ".env"):
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip("\"'")
+                if key not in os.environ:  # .env doesn't override real env vars
+                    os.environ[key] = value
+    except FileNotFoundError:
+        pass
+
+_load_dotenv()
+
 # --- Config ---
 
 _CONFIG = {
@@ -106,8 +125,8 @@ _CONFIG = {
     "PRELOAD": ("", "Preload models on startup (1/true/yes)"),
     "DEVICE": ("mps", "Inference device: mps, cuda, cpu"),
     "EMBED_BACKEND": ("torch", "Embedding backend: torch or onnx"),
-    "BGE_M3_PATH": ("/Users/adam/models/bge-m3", "Embedding model path"),
-    "BGE_RERANKER_PATH": ("/Users/adam/models/bge-reranker-v2-m3", "Reranker model path"),
+    "BGE_M3_PATH": ("./models/bge-m3", "Embedding model path"),
+    "BGE_RERANKER_PATH": ("./models/bge-reranker-v2-m3", "Reranker model path"),
     "OTEL_ENABLED": ("", "Enable OpenTelemetry tracing (1/true/yes)"),
     "PORT": ("8020", "Server port"),
 }

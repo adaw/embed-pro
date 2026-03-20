@@ -7,3 +7,4 @@ build/
 *.egg
 .DS_Store
 .env
+models/
