@@ -81,8 +81,8 @@ See `GET /config` for full list with descriptions. Key ones:
 | `PORT` | 8020 | Server port |
 | `DEVICE` | mps | Inference device: mps, cuda, cpu |
 | `EMBED_BACKEND` | torch | Embedding backend: torch or onnx |
-| `BGE_M3_PATH` | `/Users/adam/models/bge-m3` | Embedding model path |
-| `BGE_RERANKER_PATH` | `/Users/adam/models/bge-reranker-v2-m3` | Reranker model path |
+| `BGE_M3_PATH` | `./models/bge-m3` | Embedding model path |
+| `BGE_RERANKER_PATH` | `./models/bge-reranker-v2-m3` | Reranker model path |
 | `API_KEY` | (empty) | Bearer token auth (empty = disabled) |
 | `PRELOAD` | false | Preload + warmup models at startup |
 | `OFFLOAD_SECONDS` | 300 | Idle seconds before model offload |
