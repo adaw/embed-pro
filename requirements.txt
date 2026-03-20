@@ -1,5 +1,16 @@
 fastapi
-uvicorn
+uvicorn[standard]
 torch
 sentence-transformers
 pydantic
+prometheus-client
+numpy
+pytest
+httpx
+# Optional: ONNX backend (EMBED_BACKEND=onnx)
+# optimum[onnxruntime]
+# Optional: OpenTelemetry (OTEL_ENABLED=true)
+# opentelemetry-api
+# opentelemetry-sdk
+# opentelemetry-instrumentation-fastapi
+# opentelemetry-exporter-otlp
