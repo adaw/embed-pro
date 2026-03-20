@@ -53,3 +53,18 @@ curl http://localhost:8020/health
 | `MAX_TEXTS` | `512` | Max texts per embedding request |
 | `MAX_DOCUMENTS` | `512` | Max documents per rerank request |
 | `BATCH_SIZE` | `64` | Inference batch size |
+| `PRELOAD` | `false` | Load models at startup instead of first request |
+
+## Run as macOS service
+
+```bash
+# Install
+cp com.studio.embed-pro.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.studio.embed-pro.plist
+
+# Uninstall
+launchctl unload ~/Library/LaunchAgents/com.studio.embed-pro.plist
+
+# Logs
+tail -f /tmp/embed-pro.log
+```

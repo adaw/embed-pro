@@ -4,8 +4,10 @@ Studio Embedding + Reranker Server
 bge-m3 (embed) + bge-reranker-v2-m3 (rerank) on Apple MPS
 FastAPI, OpenAI-compatible /v1/embeddings + /v1/rerank
 """
-import os, gc, time, logging, threading
+import os, gc, time, logging, threading, signal, sys
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Union
 from sentence_transformers import SentenceTransformer, CrossEncoder
@@ -18,7 +20,33 @@ MAX_TEXTS = int(os.environ.get("MAX_TEXTS", "512"))
 MAX_DOCUMENTS = int(os.environ.get("MAX_DOCUMENTS", "512"))
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "64"))
 
-app = FastAPI(title="Studio Embed Server")
+PRELOAD = os.environ.get("PRELOAD", "").lower() in ("1", "true", "yes")
+
+
+def _shutdown():
+    for t in (_embed_timer, _rerank_timer):
+        if t is not None:
+            t.cancel()
+    log.info("Timers cancelled, shutting down")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if PRELOAD:
+        log.info("Preloading models...")
+        get_embed_model()
+        get_rerank_model()
+    yield
+    _shutdown()
+
+
+app = FastAPI(title="Studio Embed Server", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- Model manager with auto-offload ---
 
