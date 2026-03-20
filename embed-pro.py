@@ -643,7 +643,7 @@ def embeddings(request: Request, req: EmbedRequest):
     all_embeddings = _apply_dimensions(all_embeddings, req.dimensions)
 
     # Streaming NDJSON
-    use_stream = req.stream or (len(texts) >= STREAM_THRESHOLD)
+    use_stream = req.stream
     if use_stream:
         def _generate_ndjson():
             for i, emb in enumerate(all_embeddings):
