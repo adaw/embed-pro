@@ -401,12 +401,36 @@ def _reset_timer(kind: str):
         _rerank_timer.start()
 
 
+def _patch_onnx_output_names(model):
+    """Fix bge-m3 ONNX output: it exports 'token_embeddings' instead of 'last_hidden_state'.
+    optimum expects 'last_hidden_state' — we patch _prepare_onnx_outputs to remap."""
+    try:
+        ort_model = model[0].auto_model
+        if hasattr(ort_model, 'model'):
+            outputs = ort_model.model.get_outputs()
+            output_names = [o.name for o in outputs]
+            log.info("ONNX output names: %s", output_names)
+            if "last_hidden_state" not in output_names and "token_embeddings" in output_names:
+                orig_prepare = ort_model._prepare_onnx_outputs
+
+                def patched_prepare(use_torch, onnx_outputs):
+                    result = orig_prepare(use_torch, onnx_outputs)
+                    if "last_hidden_state" not in result and "token_embeddings" in result:
+                        result["last_hidden_state"] = result["token_embeddings"]
+                    return result
+
+                ort_model._prepare_onnx_outputs = patched_prepare
+                log.info("Patched ONNX outputs: token_embeddings -> last_hidden_state")
+    except Exception as e:
+        log.warning("Could not patch ONNX output names: %s", e)
+
+
 def _load_embed_model():
     """Load embedding model with configured backend and device."""
     if EMBED_BACKEND == "onnx":
         log.info("Loading bge-m3 with ONNX backend...")
-        # sentence-transformers >= 3.0 supports backend="onnx"
         model = SentenceTransformer(BGE_M3_PATH, backend="onnx")
+        _patch_onnx_output_names(model)
         log.info("ONNX providers: %s", getattr(model, '_onnx_providers', 'default'))
     else:
         log.info("Loading bge-m3 on %s (torch)...", DEVICE)
