@@ -7,6 +7,7 @@ FastAPI, OpenAI-compatible /v1/embeddings + /v1/rerank + WebSocket
 import os, gc, time, logging, threading, signal, sys, uuid, resource, json, asyncio
 import hashlib, base64
 import numpy as np
+import torch
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
@@ -350,6 +351,15 @@ def _update_models_gauge():
     MODELS_LOADED.set(loaded)
 
 
+def _flush_device_memory():
+    """Force release GPU/MPS memory back to OS after model offload."""
+    gc.collect()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    elif torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def _offload_embed():
     global _embed_model
     with _embed_lock:
@@ -357,7 +367,7 @@ def _offload_embed():
             log.info("Offloading bge-m3 (idle %ds)", OFFLOAD_SECONDS)
             del _embed_model
             _embed_model = None
-            gc.collect()
+            _flush_device_memory()
             _update_models_gauge()
 
 
@@ -368,7 +378,7 @@ def _offload_rerank():
             log.info("Offloading bge-reranker-v2-m3 (idle %ds)", OFFLOAD_SECONDS)
             del _rerank_model
             _rerank_model = None
-            gc.collect()
+            _flush_device_memory()
             _update_models_gauge()
 
 
@@ -432,7 +442,7 @@ def _force_reload_embed():
         if _embed_model is not None:
             del _embed_model
             _embed_model = None
-            gc.collect()
+            _flush_device_memory()
         t0 = time.time()
         _embed_model = _load_embed_model()
         log.info("bge-m3 reloaded in %.1fs", time.time() - t0)
@@ -446,7 +456,7 @@ def _force_reload_rerank():
         if _rerank_model is not None:
             del _rerank_model
             _rerank_model = None
-            gc.collect()
+            _flush_device_memory()
         log.info("Reloading bge-reranker-v2-m3 on %s...", DEVICE)
         t0 = time.time()
         _rerank_model = CrossEncoder(BGE_RERANKER_PATH, device=DEVICE)
@@ -986,6 +996,24 @@ def admin_cache_clear():
     return {"cleared": count}
 
 
+@app.post("/admin/restart", dependencies=[Depends(verify_api_key)])
+def admin_restart():
+    """Graceful restart — drain in-flight requests, then exit. Launchd/systemd will respawn."""
+    global _draining
+    _draining = True
+    log.info("Admin restart requested — draining and exiting")
+
+    def _delayed_exit():
+        deadline = time.time() + DRAIN_TIMEOUT
+        while INFLIGHT._value._value > 1 and time.time() < deadline:  # >1 because this request is in-flight
+            time.sleep(0.5)
+        _shutdown()
+        os._exit(0)
+
+    threading.Thread(target=_delayed_exit, daemon=True).start()
+    return {"restarting": True, "drain_timeout": DRAIN_TIMEOUT}
+
+
 # --- Config introspection ---
 
 @app.get("/config")
@@ -1008,10 +1036,32 @@ def metrics():
 
 # --- Health + Readiness ---
 
+def _get_rss_mb() -> int:
+    """Get current RSS (not peak) in MB. Works on macOS and Linux."""
+    try:
+        with open(f"/proc/{os.getpid()}/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) // 1024
+    except FileNotFoundError:
+        pass
+    # macOS fallback: use ps
+    try:
+        import subprocess
+        out = subprocess.check_output(["ps", "-o", "rss=", "-p", str(os.getpid())], text=True)
+        return int(out.strip()) // 1024
+    except Exception:
+        pass
+    # Last resort: peak RSS
+    mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return int(mem / (1024 * 1024) if sys.platform == "darwin" else mem / 1024)
+
+
 @app.get("/health")
 def health():
-    mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    mem_mb = mem / (1024 * 1024) if sys.platform == "darwin" else mem / 1024
+    mem_mb = _get_rss_mb()
+    peak_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    peak_mb = int(peak_mb / (1024 * 1024) if sys.platform == "darwin" else peak_mb / 1024)
     return {
         "status": "draining" if _draining else "ok",
         "uptime_seconds": round(time.time() - _start_time),
@@ -1023,7 +1073,8 @@ def health():
         "ws_connections": int(WS_CONNECTIONS._value._value),
         "cache_size": len(_embed_cache),
         "cache_capacity": CACHE_SIZE,
-        "memory_mb": round(mem_mb),
+        "memory_mb": mem_mb,
+        "memory_peak_mb": peak_mb,
         "backend": EMBED_BACKEND,
         "device": DEVICE,
         "otel": _otel_enabled,
