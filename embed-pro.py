@@ -367,6 +367,9 @@ def _offload_embed():
             log.info("Offloading bge-m3 (idle %ds)", OFFLOAD_SECONDS)
             del _embed_model
             _embed_model = None
+            cleared = _cache_clear()
+            if cleared:
+                log.info("Cache cleared on offload (%d entries)", cleared)
             _flush_device_memory()
             _update_models_gauge()
 
