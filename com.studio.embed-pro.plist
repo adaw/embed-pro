@@ -6,7 +6,7 @@
     <string>com.studio.embed-pro</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
+        <string>/Users/adam/dev/embed-pro/.venv/bin/python</string>
         <string>/Users/adam/dev/embed-pro/embed-pro.py</string>
     </array>
     <key>EnvironmentVariables</key>
